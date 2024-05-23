@@ -62,6 +62,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/medialive v1.43.3
 	github.com/aws/aws-sdk-go-v2/service/mediapackage v1.28.5
 	github.com/aws/aws-sdk-go-v2/service/mediapackagev2 v1.7.5
+	github.com/aws/aws-sdk-go-v2/service/mq v1.20.7
 	github.com/aws/aws-sdk-go-v2/service/oam v1.7.5
 	github.com/aws/aws-sdk-go-v2/service/opensearchserverless v1.9.5
 	github.com/aws/aws-sdk-go-v2/service/osis v1.6.5
@@ -100,6 +101,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/vpclattice v1.5.5
 	github.com/aws/aws-sdk-go-v2/service/workspaces v1.35.5
 	github.com/aws/aws-sdk-go-v2/service/xray v1.23.5
+	github.com/aws/smithy-go v1.19.0
 	github.com/beevik/etree v1.2.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/gertd/go-pluralize v0.2.1
@@ -162,7 +164,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.16.9 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.18.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.21.5 // indirect
-	github.com/aws/smithy-go v1.19.0 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bufbuild/protocompile v0.6.0 // indirect
