@@ -4,14 +4,18 @@
 package mq
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/xml"
 	"log"
+	"sort"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/mq"
 	"github.com/aws/aws-sdk-go-v2/service/mq/types"
+	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
@@ -213,10 +217,14 @@ func resourceConfigurationUpdate(ctx context.Context, d *schema.ResourceData, me
 			input.Description = aws.String(v.(string))
 		}
 
-		_, err := conn.UpdateConfiguration(ctx, input)
+		resp, err := conn.UpdateConfiguration(ctx, input)
 
 		if err != nil {
 			return sdkdiag.AppendErrorf(diags, "updating MQ Configuration (%s): %s", d.Id(), err)
+		}
+		if len(resp.Warnings) > 0 {
+			//
+			return sdkdiag.AppendErrorf(diags, "Sanitized version, discarding version from state (%s): %+v", d.Id(), resp.Warnings)
 		}
 	}
 
@@ -248,6 +256,21 @@ func findConfigurationByID(ctx context.Context, conn *mq.Client, id string) (*mq
 	return output, nil
 }
 
+// func suppressXMLEquivalentConfig(k, old, new string, d *schema.ResourceData) bool {
+// 	os, err := CanonicalXML(old)
+// 	if err != nil {
+// 		log.Printf("[ERR] Error getting cannonicalXML from state (%s): %s", k, err)
+// 		return false
+// 	}
+// 	ns, err := CanonicalXML(new)
+// 	if err != nil {
+// 		log.Printf("[ERR] Error getting cannonicalXML from config (%s): %s", k, err)
+// 		return false
+// 	}
+
+// 	return os == ns
+// }
+
 func suppressXMLEquivalentConfig(k, old, new string, d *schema.ResourceData) bool {
 	os, err := CanonicalXML(old)
 	if err != nil {
@@ -259,6 +282,85 @@ func suppressXMLEquivalentConfig(k, old, new string, d *schema.ResourceData) boo
 		log.Printf("[ERR] Error getting cannonicalXML from config (%s): %s", k, err)
 		return false
 	}
+	diff := cmp.Diff(os, ns)
+	log.Printf("[DIFFING] MQ Configuration , diff is %s", diff)
+	log.Printf("[DIFFING] MQ Configuration , k is %s", k)
+	log.Printf("[DIFFING] old (%s), new (%s),diff is %s", old, new, diff)
+	return DiffXMLConfigs(old, new) == ""
+}
 
-	return os == ns
+type Node struct {
+	XMLName xml.Name
+	Attr    []xml.Attr `xml:",any,attr"`
+	Content []byte     `xml:",innerxml"`
+	Nodes   []Node     `xml:",any"`
+}
+
+func (n *Node) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type node Node
+	return d.DecodeElement((*node)(n), &start)
+}
+
+func DiffXMLConfigs(c1, c2 string) string {
+	var configNode1 Node
+	if err := decodeString(c1, &configNode1); err != nil {
+		return ""
+	}
+	var configNode2 Node
+	if err := decodeString(c2, &configNode2); err != nil {
+		return ""
+	}
+	return diffNodes(configNode1, configNode2)
+}
+
+func decodeString(xmlString string, node *Node) error {
+	buf := bytes.NewBuffer([]byte(xmlString))
+	dec := xml.NewDecoder(buf)
+	return dec.Decode(node)
+}
+
+func diffNodes(forProvider, atProvider Node) string {
+	diff := cmp.Diff(forProvider, atProvider, nodeComparerOpt())
+	return diff
+}
+
+// Function closure to recursively check equality of nodes
+// based on attributes, subnodes and tag name equality
+func nodeComparerOpt() cmp.Option {
+	return cmp.Comparer(func(x, y Node) bool {
+		if x.XMLName.Local != y.XMLName.Local {
+			return false
+		}
+		if len(x.Nodes) != len(y.Nodes) {
+			return false
+		}
+
+		// TODO refactor
+		sort.Slice(x.Attr, func(i, j int) bool {
+			return x.Attr[i].Name.Local < x.Attr[j].Name.Local
+		})
+		sort.Slice(y.Attr, func(i, j int) bool {
+			return y.Attr[i].Name.Local < y.Attr[j].Name.Local
+		})
+
+		if !cmp.Equal(x.Attr, y.Attr) {
+			return false
+		}
+
+		// TODO refactor
+		sort.Slice(x.Nodes, func(i, j int) bool {
+			return x.Nodes[i].XMLName.Local < x.Nodes[j].XMLName.Local
+		})
+		sort.Slice(y.Nodes, func(i, j int) bool {
+			return y.Nodes[i].XMLName.Local < y.Nodes[j].XMLName.Local
+		})
+
+		// Compare each node recursively
+		for i := range x.Nodes {
+			if !cmp.Equal(x.Nodes[i], y.Nodes[i], nodeComparerOpt()) {
+				return false
+			}
+		}
+		return true
+	})
 }
